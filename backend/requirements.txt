@@ -7,3 +7,5 @@ python-dotenv==1.2.4
 google-genai==2.29.0
 ollama=0.6.3
 groq==1.7.0
+numpy
+sentence-transformers

@@ -7,8 +7,8 @@ load_dotenv()
 PROVIDER = os.getenv("LLM_PROVIDER", "groq")  
 
 OLLAMA_MODEL = "llama3.2"
-GEMINI_MODEL = "gemini-2.0-flash"
-GROQ_MODEL = "llama-3.1-8b-instant"
+GEMINI_MODEL = "gemini-3.8-flash"
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 
 def build_prompt(question: str, chunks: list[str]) -> str:
