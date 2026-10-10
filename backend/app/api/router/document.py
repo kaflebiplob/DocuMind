@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.document_loader import extract_text_from_pdf
+from app.services.text_splitter import split_text
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -26,4 +27,15 @@ async def upload_document(file: UploadFile = File(...)):
             status_code=400, detail="No text found in PDF. It may be scanned document."
         )
 
-    return {"filename": file.filename, "characters": len(text), "text": text}
+    chunks = split_text(
+        text,
+        chunk_size=500,
+        overlap=50,
+    )
+
+    return {
+        "filename": file.filename,
+        "characters": len(text),
+        "text": text,
+        "chunks": chunks,
+    }
