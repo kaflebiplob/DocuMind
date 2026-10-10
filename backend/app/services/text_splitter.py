@@ -1,7 +1,7 @@
 def split_text(text: str, chunk_size: int = 500, overlap: int = 50):
     """Split text into character based chunks with overlap."""
     if chunk_size <= 0:
-        raise ValueError("Chunk sixe must be greater than 0.")
+        raise ValueError("Chunk size must be greater than 0.")
     if overlap < 0 or overlap >= chunk_size:
         raise ValueError("Overlap must be non negative and smaller than chunk-size.")
 
@@ -53,5 +53,3 @@ def search_chunks(query: str, chunks: list[str], top_k: int = 3) -> list[dict]:
 
     results.sort(key=lambda result: result["score"], reverse=True)
     return results[:top_k]
-
-
