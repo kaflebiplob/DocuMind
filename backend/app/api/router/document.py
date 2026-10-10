@@ -35,11 +35,15 @@ async def upload_document(file: UploadFile = File(...)):
         overlap=50,
     )
 
+    document_id = save_document(file.filename, chunks)
+
     return {
+        "document_id": document_id,
         "filename": file.filename,
         "characters": len(text),
         "text": text,
         "chunks": chunks,
+        "chuck_count": len(chunks),
     }
 
 
@@ -47,7 +51,7 @@ async def upload_document(file: UploadFile = File(...)):
 async def ask_question(body: AskRequest):
     document = get_documents(body.document_id)
     if not document:
-        raise HTTPException(status_code=400, detail="Document not found.")
+        raise HTTPException(status_code=404, detail="Document not found.")
 
     results = search_chunks(body.question, document["chunks"], top_k=3)
     if not results:
