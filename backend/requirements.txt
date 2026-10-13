@@ -9,3 +9,4 @@ ollama=0.6.3
 groq==1.7.0
 numpy
 sentence-transformers
+jupyter==1.1.1
