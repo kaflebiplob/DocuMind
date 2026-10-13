@@ -1,3 +1,7 @@
+from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+
 def split_text(text: str, chunk_size: int = 500, overlap: int = 50):
     """Split text into character based chunks with overlap."""
     if chunk_size <= 0:
@@ -30,26 +34,40 @@ def split_text(text: str, chunk_size: int = 500, overlap: int = 50):
 
 
 def search_chunks(query: str, chunks: list[str], top_k: int = 3) -> list[dict]:
-    """Find chunks that share most words with a query."""
+    """Find the most relevant chunks using TF-IDF similarity."""
 
     query_words = set(query.lower().split())
     if not query_words:
         return []
 
+    if not query.strip() or not chunks:
+        return []
+
+    vectorizer = TfidfTransformer()
+
+    try:
+        chunk_vectors = vectorizer.fit_transform(chunks)
+    except ValueError:  # every word was a stop word, so the vocabulary is empty
+        return []
+    query_vector = vectorizer.transform([query])
+
+    # calculate the similarity between query and chunks
+    scores = cosine_similarity(query_vector, chunk_vectors).flatten()
+
+    ranked_indices = scores.argsort()[::-1]
+
     results = []
 
-    for index, chunk in enumerate(chunks):
-        chunk_words = set(chunk.lower().split())
-        match_words = query_words.intersection(chunk_words)
+    for index in ranked_indices[:top_k]:
+        score = float(scores[index])
 
-        if match_words:
+        if score > 0:
             results.append(
                 {
                     "chunk_index": index,
-                    "score": len(match_words),
-                    "text": chunk,
+                    "score": score(score, 4),
+                    "text": chunks[index],
                 }
             )
 
-    results.sort(key=lambda result: result["score"], reverse=True)
-    return results[:top_k]
+    return results
