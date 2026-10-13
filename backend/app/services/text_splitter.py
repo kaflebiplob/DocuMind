@@ -1,4 +1,4 @@
-from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
@@ -33,7 +33,7 @@ def split_text(text: str, chunk_size: int = 500, overlap: int = 50):
 # Search chunks function
 
 
-def search_chunks(query: str, chunks: list[str], top_k: int = 3) -> list[dict]:
+def search_chunks(query: str, chunks: list[str], top_k: int = 3,**tfidf_options) -> list[dict]:
     """Find the most relevant chunks using TF-IDF similarity."""
 
     query_words = set(query.lower().split())
@@ -43,11 +43,12 @@ def search_chunks(query: str, chunks: list[str], top_k: int = 3) -> list[dict]:
     if not query.strip() or not chunks:
         return []
 
-    vectorizer = TfidfTransformer()
+    vectorizer = TfidfVectorizer(**tfidf_options)
 
     try:
         chunk_vectors = vectorizer.fit_transform(chunks)
-    except ValueError:  # every word was a stop word, so the vocabulary is empty
+    except ValueError as exc:
+        print("TF-IDF failed:", exc)  # every word was a stop word, so the vocabulary is empty
         return []
     query_vector = vectorizer.transform([query])
 
@@ -64,8 +65,8 @@ def search_chunks(query: str, chunks: list[str], top_k: int = 3) -> list[dict]:
         if score > 0:
             results.append(
                 {
-                    "chunk_index": index,
-                    "score": score(score, 4),
+                    "score": round(score, 4),
+                    "chunk_index": int(index),
                     "text": chunks[index],
                 }
             )
