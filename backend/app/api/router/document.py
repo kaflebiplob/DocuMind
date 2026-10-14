@@ -81,19 +81,24 @@ async def ask_question(body: AskRequest):
     )
 
     if hits:
-        selected = hits
+        selected, mode = hits, "retrieved"
     elif len(chunks) <= 10:
-        selected = [(i, 0.0) for i in range(len(chunks))]
+        selected, mode = [(i, 0.0) for i in range(len(chunks))], "full_document"
     else:
-        return {"answer": "No relevant text found.", "sources": []}
+        return {"answer": "I couldn't find that in the document.", "sources": []}
 
     context_chunks = [
         f"[Page {chunks[i]['page']}] {chunks[i]['text']}" for i, _ in selected
     ]
-    sources = [
-        {"page": chunks[i]["page"], "score": s, "text": chunks[i]["text"]}
-        for i, s in selected
-    ]
+
+    sources = (
+        []
+        if mode == "full_document"
+        else [
+            {"page": chunks[i]["page"], "score": s, "text": chunks[i]["text"]}
+            for i, s in selected
+        ]
+    )
 
     try:
         answer = await run_in_threadpool(generate_answer, body.question, context_chunks)
@@ -102,4 +107,4 @@ async def ask_question(body: AskRequest):
             status_code=503, detail="The answer service is unavailable."
         )
 
-    return {"answer": answer, "sources": sources}
+    return {"answer": answer, "mode": mode, "sources": sources}
