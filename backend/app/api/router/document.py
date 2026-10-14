@@ -1,51 +1,71 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from app.services.document_loader import extract_text_from_pdf
-from app.services.text_splitter import split_text, search_chunks
-from app.schemas.schemas import AskRequest
+from app.services.document_loader import extract_pages
+from app.services.text_splitter import (
+    split_text,
+    search_chunks,
+    search_index,
+    chunk_pages,
+    build_index,
+)
+from app.schemas.schemas import AskRequest, SearchRequest
 from app.services.document_store import get_documents, save_document
 from app.services.llm import generate_answer
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
 
-@router.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Please Upload a PDF file.")
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
+TFIDF_OPTIONS = {"stop_words": "english"}
+MIN_SCORE = 0.1
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
-    file_bytes = await file.read()
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail="The uploaded file is empty")
 
+@router.post("/documents")
+def upload_document(file: UploadFile):
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File is too large (max 20 MB).")
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(400, "This file is not a valid PDF.")
+
+    pages = extract_pages(data)
+    chunks = chunk_pages(pages, CHUNK_SIZE, CHUNK_OVERLAP)
+    if not chunks:
+        raise HTTPException(422, "No readable text found in this PDF.")
     try:
-        text = await run_in_threadpool(extract_text_from_pdf, file_bytes)
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not read the PDF. please upload a Valid PDF.",
-        )
+        vectorizer, matrix = build_index([c["text"] for c in chunks])
+    except ValueError:
+        raise HTTPException(422, "No searchable words found in this PDF.")
 
-    if not text.strip():
-        raise HTTPException(
-            status_code=400, detail="No text found in PDF. It may be scanned document."
-        )
-
-    chunks = split_text(
-        text,
-        chunk_size=500,
-        overlap=50,
-    )
-
-    document_id = save_document(file.filename, chunks)
-
+    document_id = save_document(file.filename, chunks, vectorizer, matrix)
     return {
         "document_id": document_id,
         "filename": file.filename,
-        "characters": len(text),
-        # "text": text,
-        # "chunks": chunks,
-        "chunk_count": len(chunks),
+        "pages": len(pages),
+        "chunks": len(chunks),
+    }
+
+
+@router.post("/documents/{document_id}/search")
+def search_document(document_id: str, body: SearchRequest):
+    doc = get_documents(document_id)
+    if doc is None:
+        raise HTTPException(404, "Document not found.")
+    hits = search_index(
+        body.question, doc["vectorizer"], doc["matrix"], min(max(body.top_k, 1), 10)
+    )
+    return {
+        "found": bool(hits),
+        "results": [
+            {
+                "page": doc["chunks"][i]["page"],
+                "score": s,
+                "text": doc["chunks"][i]["text"],
+            }
+            for i, s in hits
+        ],
     }
 
 
@@ -56,17 +76,30 @@ async def ask_question(body: AskRequest):
         raise HTTPException(status_code=404, detail="Document not found.")
 
     chunks = document["chunks"]
-    results = search_chunks(body.question, document["chunks"], top_k=5)
-    if results:
-        context_chunks = [r["text"] for r in results]
+    hits = search_index(
+        body.question, document["vectorizer"], document["matrix"], top_k=5
+    )
+
+    if hits:
+        selected = hits
     elif len(chunks) <= 10:
-        context_chunks = chunks
+        selected = [(i, 0.0) for i in range(len(chunks))]
     else:
         return {"answer": "No relevant text found.", "sources": []}
 
+    context_chunks = [
+        f"[Page {chunks[i]['page']}] {chunks[i]['text']}" for i, _ in selected
+    ]
+    sources = [
+        {"page": chunks[i]["page"], "score": s, "text": chunks[i]["text"]}
+        for i, s in selected
+    ]
+
     try:
         answer = await run_in_threadpool(generate_answer, body.question, context_chunks)
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"LLM error: {e}")
+    except Exception:
+        raise HTTPException(
+            status_code=503, detail="The answer service is unavailable."
+        )
 
-    return {"answer": answer, "sources": results}
+    return {"answer": answer, "sources": sources}
